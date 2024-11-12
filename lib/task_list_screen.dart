@@ -1,7 +1,6 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:task_management_cw06/model/task.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class TaskListScreen extends StatefulWidget {
   @override
@@ -9,125 +8,231 @@ class TaskListScreen extends StatefulWidget {
 }
 
 class _TaskListScreenState extends State<TaskListScreen> {
-  TextEditingController _taskController = TextEditingController();
-  String _priority = 'Low';
-  DateTime _dueDate = DateTime.now();
-  late FirebaseAuth _auth;
-  late User _user;
-
-  @override
-  void initState() {
-    super.initState();
-    _auth = FirebaseAuth.instance;
-    _user = _auth.currentUser!;
-  }
-
-  // Add a task
-  Future<void> _addTask() async {
-    final task = Task(
-      id: DateTime.now().toString(),
-      name: _taskController.text,
-      priority: _priority,
-      dueDate: _dueDate,
-    );
-
-    await FirebaseFirestore.instance.collection('tasks').add(task.toMap());
-
-    // Clear the input field
-    _taskController.clear();
-  }
-
-  // Toggle task completion status
-  Future<void> _toggleTaskCompletion(String taskId, bool isCompleted) async {
-    await FirebaseFirestore.instance.collection('tasks').doc(taskId).update({
-      'isCompleted': !isCompleted,
-    });
-  }
-
-  // Delete a task
-  Future<void> _deleteTask(String taskId) async {
-    await FirebaseFirestore.instance.collection('tasks').doc(taskId).delete();
-  }
-
-  // Task widget
-  Widget _buildTaskItem(Task task) {
-    return ListTile(
-      title: Text(
-        task.name,
-        style: TextStyle(
-          decoration: task.isCompleted
-              ? TextDecoration.lineThrough
-              : TextDecoration.none,
-        ),
-      ),
-      leading: Checkbox(
-        value: task.isCompleted,
-        onChanged: (_) => _toggleTaskCompletion(task.id, task.isCompleted),
-      ),
-      trailing: IconButton(
-        icon: Icon(Icons.delete),
-        onPressed: () => _deleteTask(task.id),
-      ),
-    );
-  }
+  final _firestore = FirebaseFirestore.instance;
+  final _taskController = TextEditingController();
+  String _selectedPriority = 'Medium';
+  String _sortOption = 'Priority';
+  String? _filterPriority;
+  bool showOnlyCompleted = false;
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('Task Management')),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          children: [
-            TextField(
-              controller: _taskController,
-              decoration: InputDecoration(labelText: 'Enter Task'),
+      appBar: AppBar(
+        title: Text('Task List'),
+        actions: [
+          IconButton(
+            icon: Icon(Icons.logout),
+            onPressed: () async {
+              await FirebaseAuth.instance.signOut();
+              Navigator.of(context).pushReplacementNamed('/login');
+            },
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _taskController,
+                    decoration: InputDecoration(
+                      labelText: 'Enter task name',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ),
+                SizedBox(width: 10),
+                DropdownButton<String>(
+                  value: _selectedPriority,
+                  items: ['High', 'Medium', 'Low'].map((String value) {
+                    return DropdownMenuItem<String>(
+                      value: value,
+                      child: Text(value),
+                    );
+                  }).toList(),
+                  onChanged: (newValue) {
+                    setState(() {
+                      _selectedPriority = newValue!;
+                    });
+                  },
+                ),
+                IconButton(
+                  icon: Icon(Icons.add),
+                  onPressed: addTask,
+                ),
+              ],
             ),
-            DropdownButton<String>(
-              value: _priority,
-              onChanged: (newPriority) {
-                setState(() {
-                  _priority = newPriority!;
-                });
-              },
-              items: ['Low', 'Medium', 'High'].map((priority) {
-                return DropdownMenuItem<String>(
-                  value: priority,
-                  child: Text(priority),
-                );
-              }).toList(),
-            ),
-            ElevatedButton(
-              onPressed: _addTask,
-              child: Text('Add Task'),
-            ),
-            Expanded(
-              child: StreamBuilder(
-                stream: FirebaseFirestore.instance
-                    .collection('tasks')
-                    .where('userId', isEqualTo: _user.uid)
-                    .snapshots(),
-                builder: (context, snapshot) {
-                  if (!snapshot.hasData) {
-                    return Center(child: CircularProgressIndicator());
-                  }
-
-                  final tasks = snapshot.data!.docs
-                      .map((doc) => Task.fromMap(doc.id, doc.data()))
-                      .toList();
-
-                  return ListView.builder(
-                    itemCount: tasks.length,
-                    itemBuilder: (context, index) {
-                      return _buildTaskItem(tasks[index]);
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8.0),
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  DropdownButton<String>(
+                    value: _sortOption,
+                    items: ['Priority', 'Due Date', 'Completion Status']
+                        .map((String option) {
+                      return DropdownMenuItem<String>(
+                        value: option,
+                        child: Text("Sort by $option"),
+                      );
+                    }).toList(),
+                    onChanged: (newSortOption) {
+                      setState(() {
+                        _sortOption = newSortOption!;
+                      });
                     },
-                  );
-                },
+                  ),
+                  SizedBox(width: 10),
+                  DropdownButton<String?>(
+                    value: _filterPriority,
+                    hint: Text('Filter by Priority'),
+                    items: [null, 'High', 'Medium', 'Low'].map((String? value) {
+                      return DropdownMenuItem<String?>(
+                        value: value,
+                        child: Text(value ?? 'All'),
+                      );
+                    }).toList(),
+                    onChanged: (newFilter) {
+                      setState(() {
+                        _filterPriority = newFilter;
+                      });
+                    },
+                  ),
+                  SizedBox(width: 10),
+                  Row(
+                    children: [
+                      Text("Completed Only"),
+                      Switch(
+                        value: showOnlyCompleted,
+                        onChanged: (value) {
+                          setState(() {
+                            showOnlyCompleted = value;
+                          });
+                        },
+                      ),
+                    ],
+                  ),
+                ],
               ),
             ),
-          ],
-        ),
+          ),
+          Expanded(
+            child: FutureBuilder<QuerySnapshot>(
+              future: _fetchTasks(),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return Center(child: CircularProgressIndicator());
+                }
+                if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                  return Center(child: Text("No tasks available."));
+                }
+                final tasks = snapshot.data!.docs;
+                return ListView.builder(
+                  itemCount: tasks.length,
+                  itemBuilder: (context, index) {
+                    var task = tasks[index];
+                    return ListTile(
+                      title: Text(task['name']),
+                      subtitle: Row(
+                        children: [
+                          Icon(
+                            Icons.circle,
+                            color: _getPriorityColor(task['priority']),
+                            size: 10,
+                          ),
+                          SizedBox(width: 5),
+                          Text('Priority: ${task['priority']}'),
+                        ],
+                      ),
+                      leading: Checkbox(
+                        value: task['completed'],
+                        activeColor: Colors.green,
+                        onChanged: (value) {
+                          toggleCompletion(task.id, value);
+                        },
+                      ),
+                      trailing: IconButton(
+                        icon: Icon(Icons.delete),
+                        onPressed: () => deleteTask(task.id),
+                      ),
+                    );
+                  },
+                );
+              },
+            ),
+          ),
+        ],
       ),
     );
+  }
+
+  Future<void> addTask() async {
+    if (_taskController.text.isNotEmpty) {
+      await _firestore.collection('tasks').add({
+        'name': _taskController.text,
+        'completed': false,
+        'priority': _selectedPriority,
+        'dueDate': DateTime.now(),
+      });
+      _taskController.clear();
+      setState(() {}); // Refresh to show new task
+    }
+  }
+
+  Future<void> toggleCompletion(String taskId, bool? isCompleted) async {
+    await _firestore.collection('tasks').doc(taskId).update({
+      'completed': isCompleted,
+    });
+    setState(() {});
+  }
+
+  Future<void> deleteTask(String taskId) async {
+    await _firestore.collection('tasks').doc(taskId).delete();
+    setState(() {});
+  }
+
+  Future<QuerySnapshot> _fetchTasks() async {
+    Query query = _firestore.collection('tasks');
+
+    if (_filterPriority != null) {
+      query = query.where('priority', isEqualTo: _filterPriority);
+    }
+
+    if (showOnlyCompleted) {
+      query = query.where('completed', isEqualTo: true);
+    }
+
+    switch (_sortOption) {
+      case 'Priority':
+        query = query.orderBy('priority', descending: false);
+        break;
+      case 'Due Date':
+        query = query.orderBy('dueDate');
+        break;
+      case 'Completion Status':
+        query = query.orderBy('completed', descending: true);
+        break;
+    }
+
+    return query.get();
+  }
+
+  Color _getPriorityColor(String priority) {
+    switch (priority) {
+      case 'High':
+        return Colors.red;
+      case 'Medium':
+        return Colors.yellow;
+      case 'Low':
+        return Colors.green;
+      default:
+        return Colors.grey;
+    }
   }
 }
