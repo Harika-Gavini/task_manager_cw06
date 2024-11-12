@@ -17,7 +17,7 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'Task Manager',
       theme: ThemeData.dark(),
-      home: AuthCheck(),
+      home: TaskListScreen(),
     );
   }
 }

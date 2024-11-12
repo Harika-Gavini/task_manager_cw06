@@ -9,11 +9,9 @@ class TaskListScreen extends StatefulWidget {
 
 class _TaskListScreenState extends State<TaskListScreen> {
   final _firestore = FirebaseFirestore.instance;
-  final _taskController = TextEditingController();
-  String _selectedPriority = 'Medium';
-  String _sortOption = 'Priority';
-  String? _filterPriority;
-  bool showOnlyCompleted = false;
+  String _selectedPriority = 'Medium'; // Default Priority
+  String _sortOption = 'Priority'; // Default Sort Option
+  String? _filterPriority; // The selected filter
 
   @override
   Widget build(BuildContext context) {
@@ -37,32 +35,11 @@ class _TaskListScreenState extends State<TaskListScreen> {
             child: Row(
               children: [
                 Expanded(
-                  child: TextField(
-                    controller: _taskController,
-                    decoration: InputDecoration(
-                      labelText: 'Enter task name',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                ),
-                SizedBox(width: 10),
-                DropdownButton<String>(
-                  value: _selectedPriority,
-                  items: ['High', 'Medium', 'Low'].map((String value) {
-                    return DropdownMenuItem<String>(
-                      value: value,
-                      child: Text(value),
-                    );
-                  }).toList(),
-                  onChanged: (newValue) {
-                    setState(() {
-                      _selectedPriority = newValue!;
-                    });
-                  },
+                  child: Text('Filter Options'),
                 ),
                 IconButton(
                   icon: Icon(Icons.add),
-                  onPressed: addTask,
+                  onPressed: _showAddTaskDialog,
                 ),
               ],
             ),
@@ -73,6 +50,7 @@ class _TaskListScreenState extends State<TaskListScreen> {
               scrollDirection: Axis.horizontal,
               child: Row(
                 children: [
+                  // Sort by dropdown
                   DropdownButton<String>(
                     value: _sortOption,
                     items: ['Priority', 'Due Date', 'Completion Status']
@@ -89,13 +67,14 @@ class _TaskListScreenState extends State<TaskListScreen> {
                     },
                   ),
                   SizedBox(width: 10),
+                  // Filter by priority dropdown
                   DropdownButton<String?>(
                     value: _filterPriority,
                     hint: Text('Filter by Priority'),
-                    items: [null, 'High', 'Medium', 'Low'].map((String? value) {
+                    items: ['All', 'High', 'Medium', 'Low'].map((String value) {
                       return DropdownMenuItem<String?>(
                         value: value,
-                        child: Text(value ?? 'All'),
+                        child: Text(value),
                       );
                     }).toList(),
                     onChanged: (newFilter) {
@@ -103,20 +82,6 @@ class _TaskListScreenState extends State<TaskListScreen> {
                         _filterPriority = newFilter;
                       });
                     },
-                  ),
-                  SizedBox(width: 10),
-                  Row(
-                    children: [
-                      Text("Completed Only"),
-                      Switch(
-                        value: showOnlyCompleted,
-                        onChanged: (value) {
-                          setState(() {
-                            showOnlyCompleted = value;
-                          });
-                        },
-                      ),
-                    ],
                   ),
                 ],
               ),
@@ -137,29 +102,41 @@ class _TaskListScreenState extends State<TaskListScreen> {
                   itemCount: tasks.length,
                   itemBuilder: (context, index) {
                     var task = tasks[index];
-                    return ListTile(
-                      title: Text(task['name']),
-                      subtitle: Row(
-                        children: [
-                          Icon(
-                            Icons.circle,
-                            color: _getPriorityColor(task['priority']),
-                            size: 10,
-                          ),
-                          SizedBox(width: 5),
-                          Text('Priority: ${task['priority']}'),
-                        ],
-                      ),
-                      leading: Checkbox(
-                        value: task['completed'],
-                        activeColor: Colors.green,
-                        onChanged: (value) {
-                          toggleCompletion(task.id, value);
-                        },
-                      ),
-                      trailing: IconButton(
-                        icon: Icon(Icons.delete),
-                        onPressed: () => deleteTask(task.id),
+                    return Card(
+                      margin: EdgeInsets.all(8),
+                      child: ListTile(
+                        title: Text(task['name']),
+                        subtitle: Row(
+                          children: [
+                            Icon(
+                              Icons.circle,
+                              color: _getPriorityColor(task['priority']),
+                              size: 10,
+                            ),
+                            SizedBox(width: 5),
+                            Text('Priority: ${task['priority']}'),
+                          ],
+                        ),
+                        leading: Checkbox(
+                          value: task['completed'],
+                          activeColor: Colors.green,
+                          onChanged: (value) {
+                            toggleCompletion(task.id, value);
+                          },
+                        ),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              icon: Icon(Icons.delete),
+                              onPressed: () => deleteTask(task.id),
+                            ),
+                            IconButton(
+                              icon: Icon(Icons.add),
+                              onPressed: () => _showAddSubtaskDialog(task.id),
+                            ),
+                          ],
+                        ),
                       ),
                     );
                   },
@@ -172,19 +149,91 @@ class _TaskListScreenState extends State<TaskListScreen> {
     );
   }
 
-  Future<void> addTask() async {
-    if (_taskController.text.isNotEmpty) {
-      await _firestore.collection('tasks').add({
-        'name': _taskController.text,
-        'completed': false,
-        'priority': _selectedPriority,
-        'dueDate': DateTime.now(),
-      });
-      _taskController.clear();
-      setState(() {}); // Refresh to show new task
-    }
+  // Method to show Add Task Dialog
+  Future<void> _showAddTaskDialog() async {
+    String taskName = '';
+    String taskPriority = 'Medium';
+    DateTime dueDate = DateTime.now();
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Text("Add Task"),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                decoration: InputDecoration(labelText: 'Task name'),
+                onChanged: (value) {
+                  taskName = value;
+                },
+              ),
+              SizedBox(height: 10),
+              DropdownButton<String>(
+                value: taskPriority,
+                items: ['High', 'Medium', 'Low'].map((String value) {
+                  return DropdownMenuItem<String>(
+                    value: value,
+                    child: Text(value),
+                  );
+                }).toList(),
+                onChanged: (newValue) {
+                  taskPriority = newValue!;
+                },
+              ),
+              SizedBox(height: 10),
+              GestureDetector(
+                onTap: () async {
+                  DateTime? pickedDate = await showDatePicker(
+                    context: context,
+                    initialDate: dueDate,
+                    firstDate: DateTime(2020),
+                    lastDate: DateTime(2101),
+                  );
+                  if (pickedDate != null && pickedDate != dueDate)
+                    setState(() {
+                      dueDate = pickedDate;
+                    });
+                },
+                child: Row(
+                  children: [
+                    Text('Due Date: ${dueDate.toLocal()}'),
+                    Icon(Icons.calendar_today),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context);
+              },
+              child: Text("Cancel"),
+            ),
+            TextButton(
+              onPressed: () async {
+                if (taskName.isNotEmpty) {
+                  await _firestore.collection('tasks').add({
+                    'name': taskName,
+                    'completed': false,
+                    'priority': taskPriority,
+                    'dueDate': dueDate,
+                  });
+                  Navigator.pop(context);
+                  setState(() {});
+                }
+              },
+              child: Text("Add"),
+            ),
+          ],
+        );
+      },
+    );
   }
 
+  // Method to toggle completion status
   Future<void> toggleCompletion(String taskId, bool? isCompleted) async {
     await _firestore.collection('tasks').doc(taskId).update({
       'completed': isCompleted,
@@ -192,22 +241,22 @@ class _TaskListScreenState extends State<TaskListScreen> {
     setState(() {});
   }
 
+  // Method to delete a task
   Future<void> deleteTask(String taskId) async {
     await _firestore.collection('tasks').doc(taskId).delete();
     setState(() {});
   }
 
+  // Method to fetch tasks based on filter and sort options
   Future<QuerySnapshot> _fetchTasks() async {
     Query query = _firestore.collection('tasks');
 
-    if (_filterPriority != null) {
+    // Filter by priority
+    if (_filterPriority != null && _filterPriority != 'All') {
       query = query.where('priority', isEqualTo: _filterPriority);
     }
 
-    if (showOnlyCompleted) {
-      query = query.where('completed', isEqualTo: true);
-    }
-
+    // Sort by selected option
     switch (_sortOption) {
       case 'Priority':
         query = query.orderBy('priority', descending: false);
@@ -223,12 +272,84 @@ class _TaskListScreenState extends State<TaskListScreen> {
     return query.get();
   }
 
+  // Method to show Add Subtask Dialog
+  Future<void> _showAddSubtaskDialog(String taskId) async {
+    String subtaskName = '';
+    TimeOfDay selectedTime = TimeOfDay.now();
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Text("Add Subtask"),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                decoration: InputDecoration(labelText: 'Subtask name'),
+                onChanged: (value) {
+                  subtaskName = value;
+                },
+              ),
+              SizedBox(height: 10),
+              GestureDetector(
+                onTap: () async {
+                  TimeOfDay? time = await showTimePicker(
+                    context: context,
+                    initialTime: selectedTime,
+                  );
+                  if (time != null) {
+                    setState(() {
+                      selectedTime = time;
+                    });
+                  }
+                },
+                child: Row(
+                  children: [
+                    Text('Due Time: ${selectedTime.format(context)}'),
+                    Icon(Icons.access_time),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context);
+              },
+              child: Text("Cancel"),
+            ),
+            TextButton(
+              onPressed: () async {
+                if (subtaskName.isNotEmpty) {
+                  await _firestore
+                      .collection('tasks')
+                      .doc(taskId)
+                      .collection('subtasks')
+                      .add({
+                    'name': subtaskName,
+                    'dueTime': selectedTime.format(context),
+                  });
+                  Navigator.pop(context);
+                  setState(() {});
+                }
+              },
+              child: Text("Add"),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  // Helper method to get priority color
   Color _getPriorityColor(String priority) {
     switch (priority) {
       case 'High':
         return Colors.red;
       case 'Medium':
-        return Colors.yellow;
+        return Colors.orange;
       case 'Low':
         return Colors.green;
       default:
